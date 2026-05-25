@@ -6,6 +6,7 @@ from openai import AsyncOpenAI
 from ..core.config import settings
 from ..models.schemas import CodeSnippet, FixSuggestion
 from .github import IssueData
+from .retriever import _clean_text, _remove_environment_sections
 
 _client = AsyncOpenAI(
     api_key=settings.deepseek_api_key,
@@ -47,10 +48,17 @@ def _build_user_message(
     issue: IssueData,
     snippets: list[tuple[CodeSnippet, float]],
 ) -> str:
+    # Clean the body before sending to LLM (same pipeline as retriever)
+    body = issue.body or ""
+    body = _remove_environment_sections(body)
+    body = _clean_text(body)
+    if len(body) > 2000:
+        body = body[:2000] + "\n... (truncated)"
+
     lines = [
         f"## GitHub Issue\n",
         f"**Title**: {issue.title}\n",
-        f"**Body**:\n{issue.body}\n",
+        f"**Body**:\n{body}\n",
         f"## Retrieved Code Snippets (ranked by relevance)\n",
     ]
 

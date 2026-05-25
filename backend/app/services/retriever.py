@@ -139,29 +139,125 @@ def _build_queries(issue: IssueData) -> list[str]:
 
 
 # ============================================================
-# 4. 检索入口 —— 多查询 → 合并 → 去重 → 排序
+# 4. Embedding 检索 —— 多查询 → 合并 → 去重
 # ============================================================
 
 
-def retrieve(
-    issue: IssueData, collection_name: str, top_k: int = 10
+def _embedding_search(
+    queries: list[str], collection_name: str, top_k: int
 ) -> list[tuple[CodeSnippet, float]]:
-    """用清洗后的多查询检索相关代码片段，去重后返回 top_k。"""
-    queries = _build_queries(issue)
-
-    # key = "file_path:name"，用于去重
+    """Run embedding search across multiple queries, deduplicate by file_path:name."""
     seen: dict[str, tuple[CodeSnippet, float]] = {}
-
-    # 每个查询拿 top_k 的一半，保证结果多样性
     per_query = max(1, top_k // len(queries))
     for query in queries:
         results = embedder.search_snippets(query, collection_name, top_k=per_query)
         for snippet, score in results:
             key = f"{snippet.file_path}:{snippet.name}"
-            # 同一个片段命中多次 → 取最高分
             if key not in seen or score > seen[key][1]:
                 seen[key] = (snippet, score)
+    return sorted(seen.values(), key=lambda x: x[1], reverse=True)
 
-    # 按相似度降序，截断到 top_k
-    sorted_results = sorted(seen.values(), key=lambda x: x[1], reverse=True)
-    return sorted_results[:top_k]
+
+# ============================================================
+# 5. BM25 检索 + RRF 融合
+# ============================================================
+
+
+def _make_key(snippet: CodeSnippet) -> str:
+    return f"{snippet.file_path}:{snippet.name}"
+
+
+def _rrf_fuse(
+    embedding_results: list[tuple[CodeSnippet, float]],
+    bm25_results: list[tuple[CodeSnippet, float]],
+    k: int = 60,
+    emb_weight: float = 3.0,
+    bm25_weight: float = 1.0,
+) -> dict[str, tuple[CodeSnippet, float]]:
+    """Weighted Reciprocal Rank Fusion.
+
+    Embedding is the primary ranker (weight=3), BM25 supplements (weight=1).
+    This means BM25 can boost snippets both rankers agree on, but won't override
+    embedding's semantic judgment on its own.
+    """
+    scores: dict[str, tuple[CodeSnippet, float]] = {}
+
+    for rank, (snippet, _) in enumerate(embedding_results, start=1):
+        key = _make_key(snippet)
+        scores[key] = (snippet, emb_weight / (k + rank))
+
+    for rank, (snippet, _) in enumerate(bm25_results, start=1):
+        key = _make_key(snippet)
+        rrf = bm25_weight / (k + rank)
+        if key in scores:
+            prev_snippet, prev_score = scores[key]
+            scores[key] = (prev_snippet, prev_score + rrf)
+        else:
+            scores[key] = (snippet, rrf)
+
+    return scores
+
+
+# ============================================================
+# 6. 检索入口 —— Embedding + BM25 混合检索
+# ============================================================
+
+
+def retrieve(
+    issue: IssueData,
+    collection_name: str,
+    top_k: int = 10,
+    snippets: list[CodeSnippet] | None = None,
+) -> list[tuple[CodeSnippet, float]]:
+    """检索相关代码片段。
+
+    如果提供 snippets，启用混合检索：
+    - 自然语言查询：纯 Embedding
+    - 代码/traceback 查询：Embedding + BM25 加权 RRF 融合
+    否则回退到纯 Embedding 检索。
+    """
+    queries = _build_queries(issue)
+
+    # 纯 Embedding 模式（snippets 未提供）
+    if not snippets:
+        embedding_results = _embedding_search(queries, collection_name, top_k)
+        return embedding_results[:top_k]
+
+    # 混合检索：
+    # queries[0] = 自然语言 → embedding only
+    # queries[1] = 代码/traceback → embedding + BM25 fused（如果存在）
+    from . import bm25 as bm25_module
+
+    # Query 0: 自然语言 → embedding only
+    nl_results = _embedding_search(queries[:1], collection_name, top_k)
+
+    # Query 1: 代码/traceback → hybrid if exists
+    code_results: list[tuple[CodeSnippet, float]] = []
+    if len(queries) > 1:
+        code_emb = _embedding_search(queries[1:], collection_name, top_k)
+
+        bm25_searcher = bm25_module.BM25Searcher(snippets)
+        code_bm25 = bm25_searcher.search(queries[1], top_k=top_k)
+
+        fused = _rrf_fuse(code_emb, code_bm25)
+        code_results = sorted(fused.values(), key=lambda x: x[1], reverse=True)
+    else:
+        code_results = []
+
+    # 最终合并：NL 结果在前（去重），code 结果补充
+    seen: set[str] = set()
+    merged: list[tuple[CodeSnippet, float]] = []
+
+    for snippet, score in nl_results:
+        key = _make_key(snippet)
+        if key not in seen:
+            seen.add(key)
+            merged.append((snippet, score))
+
+    for snippet, score in code_results:
+        key = _make_key(snippet)
+        if key not in seen:
+            seen.add(key)
+            merged.append((snippet, score))
+
+    return merged[:top_k]

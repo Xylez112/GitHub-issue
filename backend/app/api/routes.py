@@ -35,7 +35,7 @@ async def _run_pipeline(issue, repo_url: str) -> AnalyzeResponse:
 
         index_snippets(snippets, collection_name)
 
-        results = retrieve(issue, collection_name, top_k=30)
+        results = retrieve(issue, collection_name, top_k=30, snippets=snippets)
 
         relevant_snippets = [s for s, _ in results]
         raw_text, summary, fix_suggestions = await analyze(issue, results)
