@@ -1,0 +1,19 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+
+# ChromaDB data (regenerated each run)
+chroma_data/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,32 @@
+{
+  "test_cases": [
+    {
+      "name": "fastapi#14484 - TYPE_CHECKING annotations break signature",
+      "issue_url": "https://github.com/fastapi/fastapi/issues/14484",
+      "repo_url": "https://github.com/fastapi/fastapi",
+      "relevant_snippets": [
+        "fastapi/dependencies/utils.py:get_typed_annotation",
+        "fastapi/dependencies/utils.py:get_typed_return_annotation",
+        "fastapi/dependencies/utils.py:_get_signature",
+        "fastapi/dependencies/utils.py:analyze_param"
+      ]
+    },
+    {
+      "name": "requests#6680 - Add rfc9110 HTTP status code names",
+      "issue_url": "https://github.com/psf/requests/issues/6680",
+      "repo_url": "https://github.com/psf/requests",
+      "relevant_snippets": [
+        "src/requests/status_codes.py:status_codes"
+      ]
+    },
+    {
+      "name": "flask#4297 - Blueprint.errorhandler type annotation too strict",
+      "issue_url": "https://github.com/pallets/flask/issues/4297",
+      "repo_url": "https://github.com/pallets/flask",
+      "relevant_snippets": [
+        "src/flask/sansio/scaffold.py:Scaffold.errorhandler",
+        "src/flask/sansio/blueprints.py:Blueprint.app_errorhandler"
+      ]
+    }
+  ]
+}
