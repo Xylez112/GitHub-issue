@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Issue Code Analyzer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:       #0e0e0c;
+    --surface:  #181816;
+    --border:   #2a2a26;
+    --text:     #e8e6dc;
+    --muted:    #8a8878;
+    --accent:   #f0c040;
+    --accent-dim: #8a7020;
+    --teal:     #40c4a0;
+    --red:      #f05448;
+    --shadow:   4px 4px 0 #0a0a08;
+    --radius:   2px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes shimmer {
+    0%   { background-position: -200px 0; }
+    100% { background-position: 200px 0; }
+  }
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0; }
+  }
+  @keyframes scanline {
+    0%   { transform: translateY(-100%); }
+    100% { transform: translateY(100vh); }
+  }
+
+  body {
+    font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    min-height: 100vh;
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  /* Subtle noise overlay */
+  body::before {
+    content: '';
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    opacity: 0.03;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* Header */
+  header {
+    position: relative; z-index: 1;
+    border-bottom: 2px solid var(--border);
+    padding: 40px 24px 32px;
+    text-align: center;
+    background: var(--surface);
+  }
+  header .badge {
+    display: inline-block;
+    font-size: 0.7rem; font-weight: 700; letter-spacing: 0.12em;
+    color: var(--accent); border: 1px solid var(--accent-dim);
+    padding: 4px 14px; margin-bottom: 16px;
+    text-transform: uppercase;
+  }
+  header h1 {
+    font-family: 'Space Mono', 'JetBrains Mono', monospace;
+    font-size: clamp(1.3rem, 3vw, 1.8rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+  header h1 span { color: var(--accent); }
+  header .subtitle {
+    font-size: 0.82rem;
+    color: var(--muted);
+  }
+
+  /* Layout */
+  .container { max-width: 860px; margin: 0 auto; padding: 28px 16px 48px; position: relative; z-index: 1; }
+
+  /* Tabs */
+  .tabs {
+    display: flex; gap: 0; margin-bottom: 0;
+    border-left: 2px solid var(--border);
+    border-right: 2px solid var(--border);
+  }
+  .tab {
+    flex: 1; text-align: center; padding: 14px 16px;
+    background: var(--bg); border: 2px solid var(--border);
+    border-left: none; cursor: pointer;
+    font-size: 0.82rem; font-weight: 500; font-family: inherit;
+    color: var(--muted);
+    transition: all 0.12s;
+    position: relative;
+  }
+  .tab:first-child { border-left: none; }
+  .tab:last-child  { border-right: none; }
+  .tab:hover:not(.active) { color: var(--text); background: var(--surface); }
+  .tab.active {
+    color: var(--accent); background: var(--surface);
+    border-bottom-color: var(--accent);
+  }
+  .tab.active::after {
+    content: ''; position: absolute; bottom: -2px; left: 20%; right: 20%; height: 2px;
+    background: var(--accent);
+  }
+
+  /* Card */
+  .card {
+    background: var(--surface); border: 2px solid var(--border);
+    border-top: none;
+    padding: 28px 24px; margin-bottom: 24px;
+    box-shadow: var(--shadow);
+  }
+  .card h2 {
+    font-family: 'Space Mono', monospace;
+    font-size: 1rem; font-weight: 400;
+    margin-bottom: 20px; color: var(--accent);
+  }
+  .card h2::before {
+    content: '> ';
+    color: var(--teal);
+  }
+
+  .field { margin-bottom: 20px; }
+  .field label {
+    display: block;
+    font-size: 0.75rem; font-weight: 500;
+    color: var(--muted);
+    margin-bottom: 6px;
+    letter-spacing: 0.04em;
+  }
+  .field label::before {
+    content: '$ ';
+    color: var(--accent-dim);
+  }
+  .field input, .field textarea {
+    width: 100%; padding: 12px 14px;
+    background: var(--bg);
+    border: 1.5px solid var(--border);
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85rem;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    outline: none;
+  }
+  .field input:focus, .field textarea:focus {
+    border-color: var(--accent);
+    box-shadow: inset 0 0 0 1px rgba(240,192,64,0.15);
+  }
+  .field textarea { min-height: 170px; resize: vertical; line-height: 1.5; }
+  .field .hint {
+    font-size: 0.7rem; color: var(--muted);
+    margin-top: 5px; font-style: italic;
+  }
+
+  /* Button */
+  button {
+    width: 100%; padding: 14px 20px;
+    background: var(--accent); color: #0e0e0c;
+    border: none; font-family: 'Space Mono', monospace;
+    font-size: 0.9rem; font-weight: 700;
+    letter-spacing: 0.06em; cursor: pointer;
+    transition: all 0.1s;
+    position: relative;
+    box-shadow: 4px 4px 0 #5a4a18;
+  }
+  button:hover { transform: translate(1px, 1px); box-shadow: 2px 2px 0 #5a4a18; }
+  button:active { transform: translate(3px, 3px); box-shadow: none; }
+  button:disabled { opacity: 0.35; cursor: not-allowed; transform: none; box-shadow: 4px 4px 0 #5a4a18; }
+
+  /* Loading */
+  .loading {
+    display: none; text-align: center; padding: 40px 0;
+  }
+  .loading.active { display: block; }
+  .loading-steps {
+    display: flex; flex-direction: column; gap: 8px;
+    max-width: 360px; margin: 0 auto 20px;
+    text-align: left;
+  }
+  .loading-step {
+    font-size: 0.78rem; color: var(--muted);
+    padding: 8px 12px;
+    border-left: 2px solid var(--border);
+    transition: all 0.3s;
+  }
+  .loading-step.done  { color: var(--teal); border-left-color: var(--teal); }
+  .loading-step.active { color: var(--accent); border-left-color: var(--accent); }
+  .loading-step.active::after { content: '_'; animation: blink 1s step-end infinite; }
+  .loading-bar {
+    height: 3px; max-width: 360px; margin: 0 auto;
+    background: var(--border); overflow: hidden;
+  }
+  .loading-bar-fill {
+    height: 100%; width: 30%;
+    background: var(--accent);
+    animation: shimmer 2s linear infinite;
+    background-image: linear-gradient(90deg, transparent 0%, var(--accent) 50%, transparent 100%);
+    background-size: 200px 100%;
+  }
+
+  /* Error */
+  .error-box {
+    display: none; padding: 14px 18px;
+    border: 2px solid var(--red);
+    color: var(--red);
+    font-size: 0.82rem; margin-bottom: 24px;
+    box-shadow: 4px 4px 0 rgba(240,84,72,0.15);
+  }
+  .error-box::before { content: '! '; font-weight: 700; }
+  .error-box.show { display: block; animation: fadeInUp 0.25s ease-out; }
+
+  /* Results */
+  .results { display: none; }
+  .results.show { display: block; }
+  .results.show > * { animation: fadeInUp 0.35s ease-out both; }
+  .results.show > *:nth-child(1) { animation-delay: 0.05s; }
+  .results.show > *:nth-child(2) { animation-delay: 0.1s; }
+  .results.show > *:nth-child(3) { animation-delay: 0.15s; }
+  .results.show > *:nth-child(4) { animation-delay: 0.2s; }
+
+  /* Summary bar */
+  .summary-bar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 2px;
+    background: var(--border);
+    border: 2px solid var(--border);
+    margin-bottom: 24px;
+  }
+  .stat {
+    background: var(--surface);
+    padding: 16px 18px;
+    text-align: center;
+  }
+  .stat .label {
+    font-size: 0.68rem; color: var(--muted);
+    letter-spacing: 0.08em;
+    margin-bottom: 4px;
+  }
+  .stat .value {
+    font-family: 'Space Mono', monospace;
+    font-size: 1.15rem; font-weight: 700;
+    color: var(--text);
+  }
+
+  /* Section header */
+  .section-title {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.85rem; font-weight: 700;
+    color: var(--accent);
+    margin-bottom: 14px; margin-top: 28px;
+    letter-spacing: 0.06em;
+  }
+  .section-title::before { content: '## '; color: var(--muted); }
+
+  /* Analysis */
+  .analysis-box {
+    background: var(--surface);
+    border: 2px solid var(--border);
+    padding: 20px 22px; margin-bottom: 8px;
+  }
+  .analysis-box p {
+    font-size: 0.84rem; color: var(--muted);
+    white-space: pre-wrap; line-height: 1.7;
+  }
+
+  /* Snippet */
+  .snippet {
+    background: var(--surface);
+    border: 2px solid var(--border);
+    margin-bottom: 12px;
+    transition: border-color 0.15s;
+  }
+  .snippet:hover { border-color: var(--accent-dim); }
+  .snippet-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap; gap: 8px;
+  }
+  .snippet-title {
+    font-weight: 500; font-size: 0.82rem;
+    color: var(--teal);
+  }
+  .snippet-title .kind {
+    color: var(--muted); font-weight: 400;
+    font-style: italic;
+  }
+  .snippet-meta {
+    font-size: 0.68rem; color: var(--muted);
+    background: var(--bg); padding: 3px 10px;
+  }
+  .snippet-body {
+    position: relative;
+  }
+  .snippet-body pre {
+    margin: 0; padding: 16px;
+    background: var(--bg);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem; line-height: 1.55;
+    color: var(--text);
+    overflow-x: auto;
+    white-space: pre;
+    counter-reset: line;
+  }
+  .snippet-body pre .line {
+    display: block;
+    padding: 1px 0;
+  }
+  .copy-btn {
+    position: absolute; top: 8px; right: 8px;
+    background: var(--surface); color: var(--muted);
+    border: 1px solid var(--border);
+    padding: 5px 12px;
+    font-family: inherit; font-size: 0.68rem;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .snippet-body:hover .copy-btn { opacity: 1; }
+  .copy-btn:hover { color: var(--accent); border-color: var(--accent); }
+  .copy-btn.copied { color: var(--teal); border-color: var(--teal); }
+
+  /* Fix card */
+  .fix-card {
+    background: var(--surface);
+    border: 2px solid var(--border);
+    border-left: 4px solid var(--accent);
+    padding: 16px 20px; margin-bottom: 12px;
+    box-shadow: 3px 3px 0 #0a0a08;
+  }
+  .fix-header {
+    display: flex; justify-content: space-between;
+    align-items: center; margin-bottom: 10px;
+    flex-wrap: wrap; gap: 8px;
+  }
+  .fix-file {
+    font-weight: 500; font-size: 0.82rem;
+    color: var(--text);
+  }
+  .fix-confidence {
+    font-size: 0.65rem; padding: 3px 12px;
+    font-weight: 700; letter-spacing: 0.06em;
+  }
+  .conf-high   { background: #1a4030; color: var(--teal); border: 1px solid var(--teal); }
+  .conf-medium { background: #3a3010; color: var(--accent); border: 1px solid var(--accent); }
+  .conf-low    { background: #3a1410; color: var(--red); border: 1px solid var(--red); }
+  .fix-desc {
+    font-size: 0.82rem; color: var(--text);
+    margin-bottom: 6px; line-height: 1.7;
+  }
+  .fix-issue {
+    font-size: 0.74rem; color: var(--muted);
+    font-style: italic;
+  }
+  .fix-issue::before { content: '↳ '; }
+
+  /* Empty state */
+  .empty-state {
+    text-align: center; padding: 48px 20px;
+    color: var(--muted); font-size: 0.82rem;
+  }
+  .empty-state .icon { font-size: 2.5rem; margin-bottom: 12px; opacity: 0.4; }
+
+  /* Footer */
+  footer {
+    text-align: center; padding: 36px 0;
+    color: var(--muted); font-size: 0.7rem;
+    border-top: 2px solid var(--border);
+  }
+  footer span { color: var(--accent); }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+  /* Responsive */
+  @media (max-width: 600px) {
+    header { padding: 24px 16px 20px; }
+    .card { padding: 20px 14px; }
+    .summary-bar { grid-template-columns: repeat(2, 1fr); }
+    .snippet-header { flex-direction: column; align-items: flex-start; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="badge">Phase 1 · MVP</div>
+  <h1>Issue <span>→</span> Code Analyzer</h1>
+  <div class="subtitle">输入 Issue 或报错 &rarr; 自动定位代码 &rarr; 输出修复建议</div>
+</header>
+
+<div class="container">
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" data-mode="issue">[1] GitHub Issue</div>
+    <div class="tab" data-mode="error">[2] 报错文本</div>
+  </div>
+
+  <!-- Form -->
+  <div class="card" id="form-card">
+    <h2 id="form-title">分析 GitHub Issue</h2>
+
+    <div class="field" id="field-issue">
+      <label>issue-url</label>
+      <input type="text" id="issue_url" placeholder="https://github.com/owner/repo/issues/123">
+    </div>
+
+    <div class="field" id="field-error" style="display:none">
+      <label>error-traceback</label>
+      <textarea id="error_text" placeholder="把终端的报错信息粘贴到这里..."></textarea>
+      <div class="hint">第一行自动作为检索标题。支持完整 traceback。</div>
+    </div>
+
+    <div class="field">
+      <label>repo-url</label>
+      <input type="text" id="repo_url" placeholder="https://github.com/owner/repo">
+      <div class="hint">需要分析的代码仓库地址。仅支持 Python 项目。</div>
+    </div>
+
+    <button id="submit-btn" onclick="analyze()">[ 开始分析 ]</button>
+  </div>
+
+  <!-- Loading -->
+  <div class="loading" id="loading">
+    <div class="loading-steps">
+      <div class="loading-step active" id="step-1">> 克隆仓库...</div>
+      <div class="loading-step" id="step-2">> 解析 AST / 向量索引...</div>
+      <div class="loading-step" id="step-3">> 检索相关代码...</div>
+      <div class="loading-step" id="step-4">> LLM 综合分析...</div>
+    </div>
+    <div class="loading-bar"><div class="loading-bar-fill"></div></div>
+  </div>
+
+  <!-- Error -->
+  <div class="error-box" id="error-box"></div>
+
+  <!-- Results -->
+  <div class="results" id="results">
+    <div class="summary-bar" id="summary"></div>
+    <div class="analysis-box" id="analysis"></div>
+    <div class="section-title">相关代码片段</div>
+    <div id="snippets"></div>
+    <div class="section-title">修复建议</div>
+    <div id="fixes"></div>
+  </div>
+
+</div>
+
+<footer>
+  <span>FastAPI</span> + <span>ChromaDB</span> + <span>SentenceTransformer</span> + <span>DeepSeek</span>
+</footer>
+
+<script>
+// ── State ──────────────────────────────────────────
+let mode = 'issue';
+let loadingTimer = null;
+
+// ── Tab switching ──────────────────────────────────
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    mode = tab.dataset.mode;
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('form-title').textContent =
+      mode === 'issue' ? '分析 GitHub Issue' : '分析报错信息';
+    document.getElementById('field-issue').style.display = mode === 'issue' ? '' : 'none';
+    document.getElementById('field-error').style.display = mode === 'error' ? '' : 'none';
+    hideResults();
+  });
+});
+
+// ── Keyboard shortcut ──────────────────────────────
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    e.preventDefault();
+    analyze();
+  }
+});
+
+// ── Loading step animation ─────────────────────────
+function startLoadingSteps() {
+  const steps = ['step-1', 'step-2', 'step-3', 'step-4'];
+  const delays = [0, 3000, 7000, 12000]; // rough timing
+  const timers = [];
+
+  steps.forEach((id, i) => {
+    const t = setTimeout(() => {
+      steps.forEach(sid => {
+        const el = document.getElementById(sid);
+        el.classList.remove('active');
+        if (sid === id) el.classList.add('done');
+      });
+      if (i < steps.length - 1) {
+        document.getElementById(steps[i + 1]).classList.add('active');
+      }
+    }, delays[i]);
+    timers.push(t);
+  });
+
+  return () => timers.forEach(clearTimeout);
+}
+
+// ── UI helpers ─────────────────────────────────────
+function showLoading() {
+  document.getElementById('loading').classList.add('active');
+  document.getElementById('submit-btn').disabled = true;
+  hideResults();
+  // Reset steps
+  document.querySelectorAll('.loading-step').forEach(el => {
+    el.classList.remove('done', 'active');
+  });
+  document.getElementById('step-1').classList.add('active');
+  loadingTimer = startLoadingSteps();
+}
+
+function hideLoading() {
+  document.getElementById('loading').classList.remove('active');
+  document.getElementById('submit-btn').disabled = false;
+  if (loadingTimer) { loadingTimer(); loadingTimer = null; }
+  document.querySelectorAll('.loading-step').forEach(el => {
+    el.classList.remove('done', 'active');
+  });
+}
+
+function showError(msg) {
+  const el = document.getElementById('error-box');
+  el.textContent = msg;
+  el.classList.add('show');
+}
+
+function hideResults() {
+  document.getElementById('error-box').classList.remove('show');
+  document.getElementById('results').classList.remove('show');
+}
+
+function escapeHtml(s) {
+  if (!s) return '';
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+function truncate(s, n) {
+  return s && s.length > n ? s.slice(0, n) + '...' : s;
+}
+
+// ── Copy to clipboard (event delegation) ────────────
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.copy-btn');
+  if (!btn) return;
+  const pre = btn.closest('.snippet-body').querySelector('pre');
+  if (!pre) return;
+  navigator.clipboard.writeText(pre.textContent).then(() => {
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1500);
+  }).catch(() => {
+    btn.textContent = 'Failed';
+    setTimeout(() => { btn.textContent = 'Copy'; }, 1000);
+  });
+});
+
+// ── Main ───────────────────────────────────────────
+async function analyze() {
+  hideResults();
+  const repoUrl = document.getElementById('repo_url').value.trim();
+  if (!repoUrl) { showError('请输入仓库链接'); return; }
+
+  showLoading();
+
+  let endpoint, body;
+  if (mode === 'issue') {
+    const issueUrl = document.getElementById('issue_url').value.trim();
+    if (!issueUrl) { hideLoading(); showError('请输入 Issue 链接'); return; }
+    endpoint = '/api/analyze';
+    body = { issue_url: issueUrl, repo_url: repoUrl };
+  } else {
+    const errorText = document.getElementById('error_text').value.trim();
+    if (!errorText) { hideLoading(); showError('请粘贴报错信息'); return; }
+    endpoint = '/api/analyze-error';
+    body = { error_text: errorText, repo_url: repoUrl };
+  }
+
+  try {
+    const resp = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json();
+      throw new Error(err.detail || `HTTP ${resp.status}`);
+    }
+
+    const data = await resp.json();
+
+    // Mark all steps done
+    document.querySelectorAll('.loading-step').forEach(el => {
+      el.classList.remove('active');
+      el.classList.add('done');
+    });
+    setTimeout(() => renderResults(data), 400);
+  } catch (e) {
+    showError(e.message || '请求失败');
+  } finally {
+    setTimeout(hideLoading, 600);
+  }
+}
+
+function renderResults(data) {
+  hideResults();
+
+  document.getElementById('summary').innerHTML = `
+    <div class="stat"><div class="label">ISSUE</div><div class="value" title="${escapeHtml(data.issue_title)}">${escapeHtml(truncate(data.issue_title, 45))}</div></div>
+    <div class="stat"><div class="label">FILES</div><div class="value">${data.total_files_analyzed}</div></div>
+    <div class="stat"><div class="label">INDEXED</div><div class="value">${data.total_snippets_indexed}</div></div>
+    <div class="stat"><div class="label">HITS</div><div class="value">${data.relevant_snippets.length}</div></div>
+    <div class="stat"><div class="label">FIXES</div><div class="value">${data.fix_suggestions.length}</div></div>
+  `;
+
+  document.getElementById('analysis').innerHTML = `
+    <p>${escapeHtml(data.issue_summary || data.raw_analysis?.slice(0, 800) || '暂无分析摘要')}</p>
+  `;
+
+  // Snippets
+  const snippetsHtml = data.relevant_snippets.length
+    ? data.relevant_snippets.map((s, i) => `
+      <div class="snippet" style="animation: fadeInUp 0.3s ease-out both; animation-delay: ${i * 0.04}s">
+        <div class="snippet-header">
+          <span class="snippet-title">
+            ${escapeHtml(s.name)}
+            <span class="kind">::${escapeHtml(s.kind)}</span>
+          </span>
+          <span class="snippet-meta">${escapeHtml(s.file_path)} :${s.line_start}-${s.line_end}</span>
+        </div>
+        <div class="snippet-body">
+          <button class="copy-btn">Copy</button>
+          <pre>${escapeHtml(s.code?.slice(0, 2000) || '')}</pre>
+        </div>
+      </div>
+    `).join('')
+    : '<div class="empty-state"><div class="icon">//</div>未找到相关代码片段</div>';
+  document.getElementById('snippets').innerHTML = snippetsHtml;
+
+  // Fix suggestions
+  const fixesHtml = data.fix_suggestions.length
+    ? data.fix_suggestions.map((f, i) => `
+      <div class="fix-card" style="animation: fadeInUp 0.3s ease-out both; animation-delay: ${i * 0.06}s">
+        <div class="fix-header">
+          <span class="fix-file">${escapeHtml(f.file_path)} / ${escapeHtml(f.name)}</span>
+          <span class="fix-confidence conf-${f.confidence}">${f.confidence.toUpperCase()}</span>
+        </div>
+        <div class="fix-desc">${escapeHtml(f.suggested_fix)}</div>
+        <div class="fix-issue">${escapeHtml(f.issue_summary)}</div>
+      </div>
+    `).join('')
+    : '<div class="empty-state"><div class="icon">[]</div>未生成修复建议</div>';
+  document.getElementById('fixes').innerHTML = fixesHtml;
+
+  document.getElementById('results').classList.add('show');
+  document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+</script>
+</body>
+</html>
