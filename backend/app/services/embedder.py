@@ -5,8 +5,10 @@ import chromadb
 from chromadb.config import Settings as ChromaSettings
 from sentence_transformers import SentenceTransformer
 
-from ..core.config import settings
+from ..core.config import settings, setup_logging
 from ..models.schemas import CodeSnippet
+
+logger = setup_logging(__name__)
 
 # 本地 embedding 模型（第一次调用时自动下载，约 80MB）
 _model: SentenceTransformer | None = None
@@ -93,7 +95,7 @@ def search_snippets(
             distance = results["distances"][0][i]
             # Convert distance (L2 by default) to a rough similarity score
             similarity = 1.0 / (1.0 + distance)
-            print(f"  匹配: {metadata['name']} | 相似度: {similarity:.3f}")
+            logger.debug("match: %s | similarity: %.3f", metadata["name"], similarity)
             snippets.append((
                 CodeSnippet(
                     file_path=metadata["file_path"],
