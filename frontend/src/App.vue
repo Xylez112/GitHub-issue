@@ -30,4 +30,13 @@ const { mode } = useAnalyzer()
   padding: 32px 16px 56px;
   position: relative; z-index: 1;
 }
+
+/* 确保 .container 内的元素在噪点/扫描线之上 */
+.container > * {
+  position: relative; z-index: 1;
+}
+
+@media (max-width: 640px) {
+  .container { padding: 20px 12px 40px; }
+}
 </style>
