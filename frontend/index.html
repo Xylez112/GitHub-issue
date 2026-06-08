@@ -270,6 +270,53 @@
   button:active { transform: translate(4px, 4px); box-shadow: none; }
   button:disabled { opacity: 0.3; cursor: not-allowed; transform: none; box-shadow: var(--shadow); }
 
+  /* ── Stream toggle ── */
+  .stream-toggle {
+    margin-bottom: 16px;
+    display: flex; align-items: center; gap: 10px;
+    font-size: 0.72rem; color: var(--muted);
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    transition: all 0.15s;
+  }
+  .stream-toggle:hover { border-color: #3a3a30; color: var(--text); }
+  .stream-toggle input { accent-color: var(--accent); }
+  .stream-toggle.checked { border-color: var(--accent); color: var(--accent); }
+
+  /* ── Agent log ── */
+  .agent-log {
+    display: none;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    padding: 16px 18px;
+    margin-bottom: 20px;
+    max-height: 280px;
+    overflow-y: auto;
+    font-family: var(--font-ui);
+  }
+  .agent-log.show { display: block; animation: fadeInUp 0.2s ease-out; }
+  .agent-log .log-title {
+    font-size: 0.68rem; color: var(--accent);
+    letter-spacing: 0.1em;
+    margin-bottom: 10px;
+    font-weight: 700;
+  }
+  .agent-log .log-entry {
+    font-size: 0.7rem;
+    padding: 3px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+    opacity: 0.85;
+  }
+  .agent-log .log-entry .agent-tag {
+    color: var(--muted); font-size: 0.65rem;
+    margin-right: 6px;
+  }
+  .agent-log .log-entry .error-msg { color: var(--red); }
+
   /* ── Loading ── */
   .loading {
     display: none; padding: 56px 0;
@@ -560,6 +607,18 @@
     </div>
 
     <button id="submit-btn" onclick="analyze()">[ 开 始 分 析 ]</button>
+
+    <!-- Stream mode toggle -->
+    <label class="stream-toggle" id="stream-toggle-label">
+      <input type="checkbox" id="stream-mode" onchange="toggleStreamMode(this)" />
+      STREAM · 实时查看 Agent 进度
+    </label>
+  </div>
+
+  <!-- Agent log (stream mode only) -->
+  <div class="agent-log" id="agent-log">
+    <div class="log-title">▸ AGENT PROGRESS</div>
+    <div id="agent-log-entries"></div>
   </div>
 
   <!-- Loading -->
@@ -705,9 +764,156 @@ document.addEventListener('click', e => {
   });
 });
 
-// ── Analyze ────────────────────────────────────────
-async function analyze() {
+// ── Stream mode toggle ──────────────────────────
+function toggleStreamMode(cb) {
+  const label = document.getElementById('stream-toggle-label');
+  if (cb.checked) {
+    label.classList.add('checked');
+  } else {
+    label.classList.remove('checked');
+  }
+}
+
+// ── Agent log helpers ───────────────────────────
+function showAgentLog() {
+  document.getElementById('agent-log').classList.add('show');
+  document.getElementById('agent-log-entries').innerHTML = '';
+}
+function hideAgentLog() {
+  document.getElementById('agent-log').classList.remove('show');
+}
+function appendLogEntry(agent, message, isError) {
+  const container = document.getElementById('agent-log-entries');
+  const entry = document.createElement('div');
+  entry.className = 'log-entry';
+  const tagClass = isError ? 'error-msg' : '';
+  entry.innerHTML = `<span class="agent-tag">[${agent}]</span><span class="${tagClass}">${escapeHtml(message)}</span>`;
+  container.appendChild(entry);
+  const log = document.getElementById('agent-log');
+  log.scrollTop = log.scrollHeight;
+}
+
+// ── SSE Analyze ──────────────────────────────────
+async function analyzeStream() {
   hideResults();
+  showAgentLog();
+
+  const repoUrl = document.getElementById('repo_url').value.trim();
+  if (!repoUrl) { showError('请输入仓库链接'); return; }
+
+  let issueUrl, errorText;
+  if (mode === 'issue') {
+    issueUrl = document.getElementById('issue_url').value.trim();
+    if (!issueUrl) { showError('请输入 Issue 链接'); return; }
+  } else {
+    errorText = document.getElementById('error_text').value.trim();
+    if (!errorText) { showError('请粘贴报错信息'); return; }
+  }
+
+  document.getElementById('submit-btn').disabled = true;
+  appendLogEntry('system', '正在连接...', false);
+
+  try {
+    const body = mode === 'issue'
+      ? { issue_url: issueUrl, repo_url: repoUrl }
+      : { error_text: errorText, repo_url: repoUrl };
+
+    // 注意：SSE 端点只支持 issue 模式（/api/analyze/stream）
+    // error 模式可以后续添加独立的流式端点
+    const endpoint = mode === 'issue' ? '/api/analyze/stream' : '/api/analyze-error';
+    const useStream = mode === 'issue';
+
+    if (!useStream) {
+      // Fallback: 非流式模式用传统方式
+      const resp = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) {
+        const err = await resp.json();
+        throw new Error(err.detail || `HTTP ${resp.status}`);
+      }
+      const data = await resp.json();
+      appendLogEntry('system', '分析完成', false);
+      renderStreamResult(data);
+      return;
+    }
+
+    // SSE 流式请求
+    const resp = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }));
+      throw new Error(err.detail || `HTTP ${resp.status}`);
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();  // 保留不完整的最后一行
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const jsonStr = line.slice(6);
+        try {
+          const data = JSON.parse(jsonStr);
+          if (data.type === 'agent_step') {
+            appendLogEntry(data.agent, data.message, false);
+          } else if (data.type === 'result') {
+            appendLogEntry('system', '报告已生成', false);
+            renderStreamResult(data);
+          } else if (data.type === 'error') {
+            appendLogEntry('system', data.message, true);
+          }
+        } catch (e) {
+          // 跳过解析失败的行（可能是不完整的 JSON）
+        }
+      }
+    }
+  } catch (e) {
+    appendLogEntry('system', `错误: ${e.message}`, true);
+  } finally {
+    document.getElementById('submit-btn').disabled = false;
+  }
+}
+
+function renderStreamResult(data) {
+  // 把 final_report Markdown 渲染到现有的结果展示区
+  const report = data.final_report || '';
+
+  document.getElementById('summary').innerHTML = '';
+  document.getElementById('analysis').innerHTML = `
+    <p>${escapeHtml(report.slice(0, 3000))}</p>
+  `;
+  document.getElementById('snippets').innerHTML = '';
+  document.getElementById('fixes').innerHTML = '';
+
+  document.getElementById('results').classList.add('show');
+  document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ── Analyze (dispatcher) ──────────────────────────
+async function analyze() {
+  // 流式模式——走 SSE 端点
+  if (document.getElementById('stream-mode').checked) {
+    return analyzeStream();
+  }
+
+  // 传统模式（保持原有逻辑）
+  hideResults();
+  hideAgentLog();
   const repoUrl = document.getElementById('repo_url').value.trim();
   if (!repoUrl) { showError('请输入仓库链接'); return; }
 
