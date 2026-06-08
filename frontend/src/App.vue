@@ -3,6 +3,7 @@ import { useAnalyzer } from './composables/useAnalyzer'
 import AppHeader from './components/AppHeader.vue'
 import AppFooter from './components/AppFooter.vue'
 import TabSwitch from './components/TabSwitch.vue'
+import IssueForm from './components/IssueForm.vue'
 
 const { mode } = useAnalyzer()
 </script>
@@ -11,10 +12,8 @@ const { mode } = useAnalyzer()
   <AppHeader phase="V2 · AGENT" />
   <div class="container">
     <TabSwitch v-model:mode="mode" />
-    <!-- 后续 Task 在这里加入 IssueForm、AgentLog、ErrorBox、ResultsPanel -->
-    <div style="padding:40px;text-align:center;color:var(--teal);font-family:var(--font-display)">
-      > components ready
-    </div>
+    <IssueForm />
+    <!-- 后续 Task：AgentLog, ErrorBox, ResultsPanel -->
   </div>
   <AppFooter />
 </template>
