@@ -1,13 +1,29 @@
+<script setup>
+import { useAnalyzer } from './composables/useAnalyzer'
+import AppHeader from './components/AppHeader.vue'
+import AppFooter from './components/AppFooter.vue'
+import TabSwitch from './components/TabSwitch.vue'
+
+const { mode } = useAnalyzer()
+</script>
+
 <template>
+  <AppHeader phase="V2 · AGENT" />
   <div class="container">
-    <div class="card">
-      <h2>CSS Migration Test</h2>
-      <div class="field">
-        <label>test-field</label>
-        <input type="text" placeholder="type something..." />
-        <div class="hint">Should show terminal aesthetic — JetBrains Mono font, dark bg</div>
-      </div>
-      <button>TEST BUTTON</button>
+    <TabSwitch v-model:mode="mode" />
+    <!-- 后续 Task 在这里加入 IssueForm、AgentLog、ErrorBox、ResultsPanel -->
+    <div style="padding:40px;text-align:center;color:var(--teal);font-family:var(--font-display)">
+      > components ready
     </div>
   </div>
+  <AppFooter />
 </template>
+
+<style scoped>
+.container {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 32px 16px 56px;
+  position: relative; z-index: 1;
+}
+</style>
