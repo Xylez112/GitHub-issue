@@ -18,6 +18,7 @@ import json
 import re
 
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
 
 from ...core.config import settings, setup_logging
@@ -139,7 +140,7 @@ def _parse_explorer_output(messages: list) -> dict:
     return {"explored_enough": explored_enough, "findings": findings}
 
 
-def code_explorer_node(state: AnalysisState, config: dict | None = None) -> dict:
+def code_explorer_node(state: AnalysisState, config: RunnableConfig | None = None) -> dict:
     """搜索代码库，定位可疑代码。
 
     这是整个系统最核心的节点——它把 Issue Analyst 的关键词
