@@ -1,0 +1,16 @@
+/* Design Tokens — 工业终端美学色彩体系 */
+:root {
+  --bg:       #0a0a08;
+  --surface:  #131311;
+  --border:   #282820;
+  --text:     #e8e6dc;
+  --muted:    #8a8878;
+  --accent:   #f0c040;
+  --accent-dim: #8a7020;
+  --teal:     #40c4a0;
+  --red:      #f05448;
+  --shadow:   6px 6px 0 rgba(0,0,0,0.4);
+  --radius:   0px;
+  --font-ui:  'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+  --font-display: 'Space Mono', 'JetBrains Mono', monospace;
+}
