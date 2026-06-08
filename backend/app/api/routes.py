@@ -1,9 +1,11 @@
+import json
 import uuid
 import shutil
 import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 
 from ..core.config import setup_logging
 from ..models.schemas import (
@@ -205,3 +207,121 @@ async def analyze_error(req: AnalyzeErrorRequest) -> AnalyzeResponse:
     """
     issue = make_synthetic_issue(req.error_text, req.repo_url)
     return await _run_pipeline(issue, req.repo_url)
+
+
+@router.post("/analyze/stream")
+async def analyze_issue_stream(req: AnalyzeRequest):
+    """SSE 流式端点 —— 实时推送 Agent 进度事件。
+
+    事件格式 (SSE):
+        data: {"type": "agent_step", "agent": "code_explorer", "message": "..."}
+        data: {"type": "result", "final_report": "..."}
+        data: {"type": "done"}
+
+    前端用 fetch + ReadableStream 接收，
+    实时显示每个 Agent 的工作进度。
+    """
+
+    async def event_generator():
+        """SSE 事件生成器——yield 出去的字符串直接发给客户端。
+
+        格式必须是 "data: <json>\\n\\n" —— SSE 协议规定。
+        两个换行符标志一条消息的结束。
+        """
+        try:
+            # Step 1: 拉取 Issue
+            yield f"data: {json.dumps({'type': 'agent_step', 'agent': 'system', 'message': '正在拉取 Issue...'})}\n\n"
+            try:
+                issue = await fetch_issue(req.issue_url)
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+                return
+
+            yield f"data: {json.dumps({'type': 'agent_step', 'agent': 'system', 'message': f'Issue 已加载: {issue.title[:80]}'})}\n\n"
+
+            # Step 2: Clone + Parse + Index
+            collection_name = f"repo-{issue.owner}-{issue.repo}-{uuid.uuid4().hex[:8]}"
+            tmp_dir = Path(tempfile.mkdtemp(prefix="gh-issue-"))
+
+            try:
+                yield f"data: {json.dumps({'type': 'agent_step', 'agent': 'system', 'message': '正在克隆仓库...'})}\n\n"
+                repo_path = clone_repo(req.repo_url, tmp_dir)
+
+                snippets = parse_repo(repo_path)
+                yield f"data: {json.dumps({'type': 'agent_step', 'agent': 'system', 'message': f'解析完成: {len(snippets)} 个代码片段, {len({s.file_path for s in snippets})} 个文件'})}\n\n"
+
+                if not snippets:
+                    yield f"data: {json.dumps({'type': 'error', 'message': '仓库中未找到 Python 代码'})}\n\n"
+                    return
+
+                index_snippets(snippets, collection_name)
+
+                # Step 3: 构建初始 State
+                initial_state: dict = {
+                    "issue_url": issue.url,
+                    "repo_url": req.repo_url,
+                    "repo_path": str(repo_path),
+                    "issue_title": issue.title,
+                    "keywords": [],
+                    "error_context": f"## {issue.title}\n\n{issue.body or ''}",
+                    "error_type": "",
+                    "suspicious_snippets": [],
+                    "fix_drafts": [],
+                    "review_votes": [],
+                    "messages": [],
+                    "errors": [],
+                    "explore_rounds": 0,
+                    "explored_enough": False,
+                    "all_approved": False,
+                    "final_report": "",
+                }
+
+                graph = build_graph()
+
+                yield f"data: {json.dumps({'type': 'agent_step', 'agent': 'system', 'message': 'Agent 图启动: 5 个 Agent 开始协作...'})}\n\n"
+
+                # Step 4: 流式执行——每个节点完成时推送进度
+                async for event in graph.astream(
+                    initial_state,
+                    config={
+                        "configurable": {
+                            "collection_name": collection_name,
+                            "snippets_raw": snippets,
+                        }
+                    },
+                ):
+                    for node_name, node_output in event.items():
+                        last_msgs = node_output.get("messages", [])
+                        if last_msgs:
+                            yield f"data: {json.dumps({'type': 'agent_step', 'agent': node_name, 'message': last_msgs[-1]})}\n\n"
+
+                # Step 5: 获取最终结果
+                final_state = await graph.ainvoke(
+                    initial_state,
+                    config={
+                        "configurable": {
+                            "collection_name": collection_name,
+                            "snippets_raw": snippets,
+                        }
+                    },
+                )
+                yield f"data: {json.dumps({'type': 'result', 'final_report': final_state.get('final_report', 'No report'), 'errors': final_state.get('errors', [])})}\n\n"
+
+            finally:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+                delete_collection(collection_name)
+
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
