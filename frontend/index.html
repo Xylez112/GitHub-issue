@@ -3,30 +3,36 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Issue Code Analyzer</title>
+<title>Issue → Code Analyzer</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg:       #0e0e0c;
-    --surface:  #181816;
-    --border:   #2a2a26;
+    --bg:       #0a0a08;
+    --surface:  #131311;
+    --border:   #282820;
     --text:     #e8e6dc;
     --muted:    #8a8878;
     --accent:   #f0c040;
     --accent-dim: #8a7020;
     --teal:     #40c4a0;
     --red:      #f05448;
-    --shadow:   4px 4px 0 #0a0a08;
-    --radius:   2px;
+    --shadow:   6px 6px 0 rgba(0,0,0,0.4);
+    --radius:   0px;
+    --font-ui:  'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+    --font-display: 'Space Mono', 'JetBrains Mono', monospace;
   }
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   @keyframes fadeInUp {
-    from { opacity: 0; transform: translateY(12px); }
+    from { opacity: 0; transform: translateY(18px); }
     to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
   }
   @keyframes shimmer {
     0%   { background-position: -200px 0; }
@@ -36,13 +42,27 @@
     0%, 100% { opacity: 1; }
     50%      { opacity: 0; }
   }
-  @keyframes scanline {
-    0%   { transform: translateY(-100%); }
-    100% { transform: translateY(100vh); }
+  @keyframes scanlines {
+    0%   { background-position: 0 0; }
+    100% { background-position: 0 4px; }
+  }
+  @keyframes grain {
+    0%, 100% { transform: translate(0, 0); }
+    10% { transform: translate(-1%, -1%); }
+    30% { transform: translate(1%, -2%); }
+    50% { transform: translate(-2%, 1%); }
+    70% { transform: translate(2%, 1%); }
+    90% { transform: translate(-1%, 2%); }
+  }
+  @keyframes borderGlow {
+    0%, 100% { border-color: var(--border); }
+    50%      { border-color: #3a3a30; }
   }
 
+  html { scroll-behavior: smooth; }
+
   body {
-    font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+    font-family: var(--font-ui);
     background: var(--bg);
     color: var(--text);
     line-height: 1.7;
@@ -51,369 +71,471 @@
     overflow-x: hidden;
   }
 
-  /* Subtle noise overlay */
+  /* ── Grain overlay ── */
   body::before {
     content: '';
-    position: fixed; inset: 0; z-index: 0; pointer-events: none;
-    opacity: 0.03;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    position: fixed; inset: -50%;
+    z-index: 0; pointer-events: none;
+    opacity: 0.04;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    animation: grain 8s steps(1) infinite;
   }
 
-  /* Header */
+  /* ── Scanlines ── */
+  body::after {
+    content: '';
+    position: fixed; inset: 0;
+    z-index: 0; pointer-events: none;
+    opacity: 0.015;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(255,255,255,0.02) 2px,
+      rgba(255,255,255,0.02) 4px
+    );
+    animation: scanlines 0.3s linear infinite;
+  }
+
+  /* ── Text selection ── */
+  ::selection {
+    background: var(--accent);
+    color: var(--bg);
+  }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); }
+  ::-webkit-scrollbar-thumb:hover { background: #3a3a30; }
+
+  /* ── Header ── */
   header {
     position: relative; z-index: 1;
-    border-bottom: 2px solid var(--border);
-    padding: 40px 24px 32px;
+    border-bottom: 1px solid var(--border);
+    padding: 60px 24px 40px;
     text-align: center;
-    background: var(--surface);
+    background: linear-gradient(180deg, #0f0f0d 0%, var(--surface) 100%);
   }
-  header .badge {
+  header .ascii-badge {
     display: inline-block;
-    font-size: 0.7rem; font-weight: 700; letter-spacing: 0.12em;
-    color: var(--accent); border: 1px solid var(--accent-dim);
-    padding: 4px 14px; margin-bottom: 16px;
-    text-transform: uppercase;
+    font-family: var(--font-display);
+    font-size: 0.6rem; font-weight: 700;
+    letter-spacing: 0.3em;
+    color: var(--accent);
+    margin-bottom: 20px;
+    opacity: 0.8;
+    animation: fadeInUp 0.6s ease-out both;
   }
   header h1 {
-    font-family: 'Space Mono', 'JetBrains Mono', monospace;
-    font-size: clamp(1.3rem, 3vw, 1.8rem);
+    font-family: var(--font-display);
+    font-size: clamp(1.6rem, 4vw, 2.2rem);
     font-weight: 700;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.03em;
     color: var(--text);
-    margin-bottom: 6px;
+    margin-bottom: 10px;
+    animation: fadeInUp 0.6s 0.1s ease-out both;
   }
-  header h1 span { color: var(--accent); }
+  header h1 .pipe {
+    color: var(--accent);
+    animation: blink 1.5s step-end infinite;
+  }
   header .subtitle {
-    font-size: 0.82rem;
+    font-size: 0.78rem;
     color: var(--muted);
+    animation: fadeInUp 0.6s 0.2s ease-out both;
   }
 
-  /* Layout */
-  .container { max-width: 860px; margin: 0 auto; padding: 28px 16px 48px; position: relative; z-index: 1; }
+  /* ── Layout ── */
+  .container {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 32px 16px 56px;
+    position: relative; z-index: 1;
+  }
 
-  /* Tabs */
+  /* ── Tabs ── */
   .tabs {
-    display: flex; gap: 0; margin-bottom: 0;
-    border-left: 2px solid var(--border);
-    border-right: 2px solid var(--border);
+    display: flex; gap: 0;
+    margin-bottom: 0;
   }
   .tab {
-    flex: 1; text-align: center; padding: 14px 16px;
-    background: var(--bg); border: 2px solid var(--border);
-    border-left: none; cursor: pointer;
-    font-size: 0.82rem; font-weight: 500; font-family: inherit;
+    flex: 1; text-align: center;
+    padding: 16px 16px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-bottom: none;
+    cursor: pointer;
+    font-family: var(--font-display);
+    font-size: 0.78rem; font-weight: 400;
     color: var(--muted);
-    transition: all 0.12s;
+    transition: all 0.15s;
     position: relative;
+    letter-spacing: 0.06em;
   }
-  .tab:first-child { border-left: none; }
-  .tab:last-child  { border-right: none; }
-  .tab:hover:not(.active) { color: var(--text); background: var(--surface); }
+  .tab:first-child { border-right: none; }
+  .tab:hover:not(.active) {
+    color: var(--text);
+    background: var(--surface);
+  }
   .tab.active {
-    color: var(--accent); background: var(--surface);
-    border-bottom-color: var(--accent);
+    color: var(--accent);
+    background: var(--surface);
+    border-bottom: 3px solid var(--accent);
   }
-  .tab.active::after {
-    content: ''; position: absolute; bottom: -2px; left: 20%; right: 20%; height: 2px;
-    background: var(--accent);
-  }
+  .tab .bracket { color: var(--muted); }
+  .tab.active .bracket { color: var(--accent); }
 
-  /* Card */
+  /* ── Card ── */
   .card {
-    background: var(--surface); border: 2px solid var(--border);
+    background: var(--surface);
+    border: 1px solid var(--border);
     border-top: none;
-    padding: 28px 24px; margin-bottom: 24px;
-    box-shadow: var(--shadow);
+    padding: 32px 28px;
+    margin-bottom: 24px;
+    position: relative;
+    animation: fadeInUp 0.5s 0.3s ease-out both;
   }
   .card h2 {
-    font-family: 'Space Mono', monospace;
+    font-family: var(--font-display);
     font-size: 1rem; font-weight: 400;
-    margin-bottom: 20px; color: var(--accent);
+    margin-bottom: 24px;
+    color: var(--teal);
+    letter-spacing: 0.04em;
   }
   .card h2::before {
     content: '> ';
-    color: var(--teal);
+    opacity: 0.6;
   }
 
-  .field { margin-bottom: 20px; }
+  .field { margin-bottom: 22px; }
   .field label {
     display: block;
-    font-size: 0.75rem; font-weight: 500;
+    font-size: 0.72rem; font-weight: 500;
     color: var(--muted);
-    margin-bottom: 6px;
-    letter-spacing: 0.04em;
+    margin-bottom: 8px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
   }
   .field label::before {
     content: '$ ';
     color: var(--accent-dim);
+    font-weight: 400;
   }
   .field input, .field textarea {
-    width: 100%; padding: 12px 14px;
+    width: 100%; padding: 14px 16px;
     background: var(--bg);
-    border: 1.5px solid var(--border);
+    border: 1px solid var(--border);
     color: var(--text);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.85rem;
+    font-family: var(--font-ui);
+    font-size: 0.83rem;
     transition: border-color 0.15s, box-shadow 0.15s;
     outline: none;
   }
   .field input:focus, .field textarea:focus {
     border-color: var(--accent);
-    box-shadow: inset 0 0 0 1px rgba(240,192,64,0.15);
+    box-shadow: 0 0 0 2px rgba(240,192,64,0.08);
   }
-  .field textarea { min-height: 170px; resize: vertical; line-height: 1.5; }
+  .field textarea {
+    min-height: 180px; resize: vertical;
+    line-height: 1.5;
+  }
+  .field ::placeholder {
+    color: #444;
+    font-style: italic;
+  }
   .field .hint {
-    font-size: 0.7rem; color: var(--muted);
-    margin-top: 5px; font-style: italic;
+    font-size: 0.68rem; color: var(--muted);
+    margin-top: 6px;
+    opacity: 0.7;
   }
 
-  /* Button */
+  /* ── Button ── */
+  .btn-row { display: flex; gap: 12px; }
   button {
-    width: 100%; padding: 14px 20px;
-    background: var(--accent); color: #0e0e0c;
-    border: none; font-family: 'Space Mono', monospace;
-    font-size: 0.9rem; font-weight: 700;
-    letter-spacing: 0.06em; cursor: pointer;
-    transition: all 0.1s;
+    flex: 1;
+    padding: 16px 24px;
+    background: var(--accent);
+    color: #0a0a08;
+    border: none;
+    font-family: var(--font-display);
+    font-size: 0.88rem; font-weight: 700;
+    letter-spacing: 0.1em;
+    cursor: pointer;
+    transition: all 0.12s;
     position: relative;
-    box-shadow: 4px 4px 0 #5a4a18;
+    box-shadow: var(--shadow);
   }
-  button:hover { transform: translate(1px, 1px); box-shadow: 2px 2px 0 #5a4a18; }
-  button:active { transform: translate(3px, 3px); box-shadow: none; }
-  button:disabled { opacity: 0.35; cursor: not-allowed; transform: none; box-shadow: 4px 4px 0 #5a4a18; }
+  button:hover  { transform: translate(2px, 2px); box-shadow: 3px 3px 0 rgba(0,0,0,0.4); }
+  button:active { transform: translate(4px, 4px); box-shadow: none; }
+  button:disabled { opacity: 0.3; cursor: not-allowed; transform: none; box-shadow: var(--shadow); }
 
-  /* Loading */
+  /* ── Loading ── */
   .loading {
-    display: none; text-align: center; padding: 40px 0;
+    display: none; padding: 56px 0;
+    text-align: center;
+    animation: fadeIn 0.3s ease-out;
   }
   .loading.active { display: block; }
-  .loading-steps {
-    display: flex; flex-direction: column; gap: 8px;
-    max-width: 360px; margin: 0 auto 20px;
-    text-align: left;
+  .loading-frame {
+    display: inline-block; text-align: left;
+    border: 1px solid var(--border);
+    padding: 28px 32px;
+    background: var(--surface);
+    min-width: 380px;
   }
   .loading-step {
-    font-size: 0.78rem; color: var(--muted);
-    padding: 8px 12px;
-    border-left: 2px solid var(--border);
+    font-size: 0.75rem; padding: 6px 0;
+    color: var(--muted);
     transition: all 0.3s;
+    font-family: var(--font-ui);
   }
-  .loading-step.done  { color: var(--teal); border-left-color: var(--teal); }
-  .loading-step.active { color: var(--accent); border-left-color: var(--accent); }
-  .loading-step.active::after { content: '_'; animation: blink 1s step-end infinite; }
+  .loading-step::before { content: '  '; }
+  .loading-step.done  { color: var(--teal); }
+  .loading-step.done::before  { content: '✓ '; }
+  .loading-step.active { color: var(--accent); }
+  .loading-step.active::before { content: '▸ '; }
+  .loading-step.active::after  {
+    content: '_';
+    animation: blink 0.8s step-end infinite;
+  }
   .loading-bar {
-    height: 3px; max-width: 360px; margin: 0 auto;
-    background: var(--border); overflow: hidden;
+    height: 2px; margin-top: 20px;
+    background: var(--border);
+    overflow: hidden;
   }
   .loading-bar-fill {
     height: 100%; width: 30%;
     background: var(--accent);
-    animation: shimmer 2s linear infinite;
-    background-image: linear-gradient(90deg, transparent 0%, var(--accent) 50%, transparent 100%);
-    background-size: 200px 100%;
+    animation: shimmer 1.5s linear infinite;
+    background-image: linear-gradient(90deg,
+      transparent 0%, var(--accent) 40%, transparent 80%
+    );
+    background-size: 300px 100%;
   }
 
-  /* Error */
+  /* ── Error ── */
   .error-box {
-    display: none; padding: 14px 18px;
-    border: 2px solid var(--red);
+    display: none;
+    padding: 18px 22px;
+    border: 1px solid var(--red);
+    border-left: 4px solid var(--red);
     color: var(--red);
-    font-size: 0.82rem; margin-bottom: 24px;
-    box-shadow: 4px 4px 0 rgba(240,84,72,0.15);
+    font-size: 0.8rem;
+    margin-bottom: 24px;
+    background: rgba(240,84,72,0.05);
   }
   .error-box::before { content: '! '; font-weight: 700; }
-  .error-box.show { display: block; animation: fadeInUp 0.25s ease-out; }
+  .error-box.show { display: block; animation: fadeInUp 0.2s ease-out; }
 
-  /* Results */
+  /* ── Results ── */
   .results { display: none; }
   .results.show { display: block; }
-  .results.show > * { animation: fadeInUp 0.35s ease-out both; }
+  .results.show > * {
+    animation: fadeInUp 0.4s ease-out both;
+  }
   .results.show > *:nth-child(1) { animation-delay: 0.05s; }
   .results.show > *:nth-child(2) { animation-delay: 0.1s; }
   .results.show > *:nth-child(3) { animation-delay: 0.15s; }
   .results.show > *:nth-child(4) { animation-delay: 0.2s; }
+  .results.show > *:nth-child(5) { animation-delay: 0.25s; }
 
-  /* Summary bar */
+  /* ── Summary bar ── */
   .summary-bar {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-    gap: 2px;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 1px;
     background: var(--border);
-    border: 2px solid var(--border);
-    margin-bottom: 24px;
+    border: 1px solid var(--border);
+    margin-bottom: 28px;
   }
   .stat {
     background: var(--surface);
-    padding: 16px 18px;
+    padding: 20px 18px;
     text-align: center;
+    transition: background 0.15s;
   }
+  .stat:hover { background: #181816; }
   .stat .label {
-    font-size: 0.68rem; color: var(--muted);
-    letter-spacing: 0.08em;
-    margin-bottom: 4px;
+    font-size: 0.65rem; color: var(--muted);
+    letter-spacing: 0.15em;
+    margin-bottom: 6px;
   }
   .stat .value {
-    font-family: 'Space Mono', monospace;
-    font-size: 1.15rem; font-weight: 700;
+    font-family: var(--font-display);
+    font-size: 1.2rem; font-weight: 700;
     color: var(--text);
   }
 
-  /* Section header */
+  /* ── Section title ── */
   .section-title {
-    font-family: 'Space Mono', monospace;
-    font-size: 0.85rem; font-weight: 700;
+    font-family: var(--font-display);
+    font-size: 0.82rem; font-weight: 700;
     color: var(--accent);
-    margin-bottom: 14px; margin-top: 28px;
-    letter-spacing: 0.06em;
+    margin-bottom: 16px; margin-top: 32px;
+    letter-spacing: 0.1em;
   }
-  .section-title::before { content: '## '; color: var(--muted); }
+  .section-title::before { content: '## '; color: var(--muted); font-weight: 400; }
 
-  /* Analysis */
+  /* ── Analysis box ── */
   .analysis-box {
     background: var(--surface);
-    border: 2px solid var(--border);
-    padding: 20px 22px; margin-bottom: 8px;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--teal);
+    padding: 24px 24px;
+    margin-bottom: 0;
   }
   .analysis-box p {
-    font-size: 0.84rem; color: var(--muted);
-    white-space: pre-wrap; line-height: 1.7;
+    font-size: 0.82rem; color: var(--muted);
+    white-space: pre-wrap; line-height: 1.8;
   }
 
-  /* Snippet */
+  /* ── Snippet ── */
   .snippet {
     background: var(--surface);
-    border: 2px solid var(--border);
-    margin-bottom: 12px;
-    transition: border-color 0.15s;
+    border: 1px solid var(--border);
+    margin-bottom: 10px;
+    transition: all 0.15s;
+    position: relative;
   }
-  .snippet:hover { border-color: var(--accent-dim); }
+  .snippet:hover {
+    border-color: #3a3a30;
+  }
   .snippet-header {
     display: flex; justify-content: space-between; align-items: center;
-    padding: 12px 16px;
+    padding: 14px 18px;
     border-bottom: 1px solid var(--border);
     flex-wrap: wrap; gap: 8px;
   }
   .snippet-title {
-    font-weight: 500; font-size: 0.82rem;
+    font-weight: 500; font-size: 0.8rem;
     color: var(--teal);
+    font-family: var(--font-ui);
   }
   .snippet-title .kind {
     color: var(--muted); font-weight: 400;
-    font-style: italic;
+    font-style: italic; font-size: 0.75rem;
   }
   .snippet-meta {
-    font-size: 0.68rem; color: var(--muted);
-    background: var(--bg); padding: 3px 10px;
+    font-size: 0.66rem; color: var(--muted);
+    background: var(--bg); padding: 4px 10px;
+    letter-spacing: 0.04em;
   }
   .snippet-body {
     position: relative;
   }
   .snippet-body pre {
-    margin: 0; padding: 16px;
+    margin: 0; padding: 18px 20px;
     background: var(--bg);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.8rem; line-height: 1.55;
+    font-family: var(--font-ui);
+    font-size: 0.78rem; line-height: 1.6;
     color: var(--text);
     overflow-x: auto;
     white-space: pre;
-    counter-reset: line;
-  }
-  .snippet-body pre .line {
-    display: block;
-    padding: 1px 0;
   }
   .copy-btn {
-    position: absolute; top: 8px; right: 8px;
+    position: absolute; top: 10px; right: 10px;
     background: var(--surface); color: var(--muted);
     border: 1px solid var(--border);
-    padding: 5px 12px;
-    font-family: inherit; font-size: 0.68rem;
+    padding: 5px 14px;
+    font-family: var(--font-ui); font-size: 0.66rem;
     cursor: pointer;
     opacity: 0;
-    transition: opacity 0.15s;
+    transition: all 0.15s;
+    letter-spacing: 0.06em;
   }
   .snippet-body:hover .copy-btn { opacity: 1; }
   .copy-btn:hover { color: var(--accent); border-color: var(--accent); }
   .copy-btn.copied { color: var(--teal); border-color: var(--teal); }
 
-  /* Fix card */
+  /* ── Fix card ── */
   .fix-card {
     background: var(--surface);
-    border: 2px solid var(--border);
+    border: 1px solid var(--border);
     border-left: 4px solid var(--accent);
-    padding: 16px 20px; margin-bottom: 12px;
-    box-shadow: 3px 3px 0 #0a0a08;
+    padding: 18px 22px;
+    margin-bottom: 10px;
+    box-shadow: 4px 4px 0 rgba(0,0,0,0.3);
+    transition: all 0.15s;
   }
+  .fix-card:hover { border-left-color: var(--teal); }
   .fix-header {
     display: flex; justify-content: space-between;
-    align-items: center; margin-bottom: 10px;
+    align-items: center; margin-bottom: 12px;
     flex-wrap: wrap; gap: 8px;
   }
   .fix-file {
-    font-weight: 500; font-size: 0.82rem;
+    font-weight: 500; font-size: 0.8rem;
     color: var(--text);
+    font-family: var(--font-ui);
   }
   .fix-confidence {
-    font-size: 0.65rem; padding: 3px 12px;
-    font-weight: 700; letter-spacing: 0.06em;
+    font-size: 0.62rem; padding: 3px 14px;
+    font-weight: 700; letter-spacing: 0.1em;
   }
-  .conf-high   { background: #1a4030; color: var(--teal); border: 1px solid var(--teal); }
-  .conf-medium { background: #3a3010; color: var(--accent); border: 1px solid var(--accent); }
-  .conf-low    { background: #3a1410; color: var(--red); border: 1px solid var(--red); }
+  .conf-high   { background: rgba(64,196,160,0.1); color: var(--teal); border: 1px solid var(--teal); }
+  .conf-medium { background: rgba(240,192,64,0.1); color: var(--accent); border: 1px solid var(--accent); }
+  .conf-low    { background: rgba(240,84,72,0.1); color: var(--red); border: 1px solid var(--red); }
   .fix-desc {
     font-size: 0.82rem; color: var(--text);
-    margin-bottom: 6px; line-height: 1.7;
+    margin-bottom: 8px; line-height: 1.7;
   }
   .fix-issue {
-    font-size: 0.74rem; color: var(--muted);
+    font-size: 0.72rem; color: var(--muted);
     font-style: italic;
   }
-  .fix-issue::before { content: '↳ '; }
+  .fix-issue::before { content: '↳ '; color: var(--accent-dim); }
 
-  /* Empty state */
+  /* ── Empty state ── */
   .empty-state {
-    text-align: center; padding: 48px 20px;
-    color: var(--muted); font-size: 0.82rem;
+    text-align: center; padding: 56px 20px;
+    color: var(--muted); font-size: 0.8rem;
+    border: 1px dashed var(--border);
   }
-  .empty-state .icon { font-size: 2.5rem; margin-bottom: 12px; opacity: 0.4; }
+  .empty-state .icon {
+    font-size: 2.2rem; margin-bottom: 12px;
+    opacity: 0.3; font-family: var(--font-display);
+  }
 
-  /* Footer */
+  /* ── Footer ── */
   footer {
-    text-align: center; padding: 36px 0;
-    color: var(--muted); font-size: 0.7rem;
-    border-top: 2px solid var(--border);
+    text-align: center; padding: 40px 0;
+    color: var(--muted); font-size: 0.68rem;
+    border-top: 1px solid var(--border);
+    letter-spacing: 0.06em;
   }
   footer span { color: var(--accent); }
+  footer .separator { color: var(--border); margin: 0 8px; }
 
-  /* Scrollbar */
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-track { background: var(--bg); }
-  ::-webkit-scrollbar-thumb { background: var(--border); }
-  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
-
-  /* Responsive */
-  @media (max-width: 600px) {
-    header { padding: 24px 16px 20px; }
+  /* ── Responsive ── */
+  @media (max-width: 640px) {
+    header { padding: 36px 16px 28px; }
     .card { padding: 20px 14px; }
     .summary-bar { grid-template-columns: repeat(2, 1fr); }
     .snippet-header { flex-direction: column; align-items: flex-start; }
+    .loading-frame { min-width: auto; padding: 20px 18px; }
+    .btn-row { flex-direction: column; }
   }
 </style>
 </head>
 <body>
 
 <header>
-  <div class="badge">Phase 1 · MVP</div>
-  <h1>Issue <span>→</span> Code Analyzer</h1>
-  <div class="subtitle">输入 Issue 或报错 &rarr; 自动定位代码 &rarr; 输出修复建议</div>
+  <div class="ascii-badge">[ PHASE 1 · MVP ]</div>
+  <h1>Issue<span class="pipe">|</span>Code<span class="pipe">|</span>Analyzer</h1>
+  <div class="subtitle">输入 Issue 或报错 &rarr; 自动克隆仓库 &rarr; AST 解析 &rarr; 向量检索 &rarr; LLM 输出修复建议</div>
 </header>
 
 <div class="container">
 
   <!-- Tabs -->
   <div class="tabs">
-    <div class="tab active" data-mode="issue">[1] GitHub Issue</div>
-    <div class="tab" data-mode="error">[2] 报错文本</div>
+    <div class="tab active" data-mode="issue">
+      <span class="bracket">[</span>1<span class="bracket">]</span> GitHub Issue
+    </div>
+    <div class="tab" data-mode="error">
+      <span class="bracket">[</span>2<span class="bracket">]</span> 报错文本
+    </div>
   </div>
 
   <!-- Form -->
@@ -437,18 +559,18 @@
       <div class="hint">需要分析的代码仓库地址。仅支持 Python 项目。</div>
     </div>
 
-    <button id="submit-btn" onclick="analyze()">[ 开始分析 ]</button>
+    <button id="submit-btn" onclick="analyze()">[ 开 始 分 析 ]</button>
   </div>
 
   <!-- Loading -->
   <div class="loading" id="loading">
-    <div class="loading-steps">
-      <div class="loading-step active" id="step-1">> 克隆仓库...</div>
-      <div class="loading-step" id="step-2">> 解析 AST / 向量索引...</div>
-      <div class="loading-step" id="step-3">> 检索相关代码...</div>
-      <div class="loading-step" id="step-4">> LLM 综合分析...</div>
+    <div class="loading-frame">
+      <div class="loading-step active" id="step-1">克隆仓库...</div>
+      <div class="loading-step" id="step-2">解析 AST / 向量索引...</div>
+      <div class="loading-step" id="step-3">检索相关代码...</div>
+      <div class="loading-step" id="step-4">LLM 综合分析...</div>
+      <div class="loading-bar"><div class="loading-bar-fill"></div></div>
     </div>
-    <div class="loading-bar"><div class="loading-bar-fill"></div></div>
   </div>
 
   <!-- Error -->
@@ -467,7 +589,11 @@
 </div>
 
 <footer>
-  <span>FastAPI</span> + <span>ChromaDB</span> + <span>SentenceTransformer</span> + <span>DeepSeek</span>
+  <span>FastAPI</span> <span class="separator">|</span>
+  <span>ChromaDB</span> <span class="separator">|</span>
+  <span>SentenceTransformer</span> <span class="separator">|</span>
+  <span>DeepSeek</span> <span class="separator">|</span>
+  <span>BM25</span>
 </footer>
 
 <script>
@@ -500,7 +626,7 @@ document.addEventListener('keydown', e => {
 // ── Loading step animation ─────────────────────────
 function startLoadingSteps() {
   const steps = ['step-1', 'step-2', 'step-3', 'step-4'];
-  const delays = [0, 3000, 7000, 12000]; // rough timing
+  const delays = [0, 3000, 7000, 12000];
   const timers = [];
 
   steps.forEach((id, i) => {
@@ -525,7 +651,6 @@ function showLoading() {
   document.getElementById('loading').classList.add('active');
   document.getElementById('submit-btn').disabled = true;
   hideResults();
-  // Reset steps
   document.querySelectorAll('.loading-step').forEach(el => {
     el.classList.remove('done', 'active');
   });
@@ -571,16 +696,16 @@ document.addEventListener('click', e => {
   const pre = btn.closest('.snippet-body').querySelector('pre');
   if (!pre) return;
   navigator.clipboard.writeText(pre.textContent).then(() => {
-    btn.textContent = 'Copied!';
+    btn.textContent = 'COPIED';
     btn.classList.add('copied');
-    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1500);
+    setTimeout(() => { btn.textContent = 'COPY'; btn.classList.remove('copied'); }, 1500);
   }).catch(() => {
-    btn.textContent = 'Failed';
-    setTimeout(() => { btn.textContent = 'Copy'; }, 1000);
+    btn.textContent = 'ERROR';
+    setTimeout(() => { btn.textContent = 'COPY'; }, 1000);
   });
 });
 
-// ── Main ───────────────────────────────────────────
+// ── Analyze ────────────────────────────────────────
 async function analyze() {
   hideResults();
   const repoUrl = document.getElementById('repo_url').value.trim();
@@ -614,17 +739,15 @@ async function analyze() {
     }
 
     const data = await resp.json();
-
-    // Mark all steps done
     document.querySelectorAll('.loading-step').forEach(el => {
       el.classList.remove('active');
       el.classList.add('done');
     });
-    setTimeout(() => renderResults(data), 400);
+    setTimeout(() => renderResults(data), 500);
   } catch (e) {
     showError(e.message || '请求失败');
   } finally {
-    setTimeout(hideLoading, 600);
+    setTimeout(hideLoading, 700);
   }
 }
 
@@ -632,7 +755,7 @@ function renderResults(data) {
   hideResults();
 
   document.getElementById('summary').innerHTML = `
-    <div class="stat"><div class="label">ISSUE</div><div class="value" title="${escapeHtml(data.issue_title)}">${escapeHtml(truncate(data.issue_title, 45))}</div></div>
+    <div class="stat"><div class="label">ISSUE</div><div class="value" title="${escapeHtml(data.issue_title)}">${escapeHtml(truncate(data.issue_title, 42))}</div></div>
     <div class="stat"><div class="label">FILES</div><div class="value">${data.total_files_analyzed}</div></div>
     <div class="stat"><div class="label">INDEXED</div><div class="value">${data.total_snippets_indexed}</div></div>
     <div class="stat"><div class="label">HITS</div><div class="value">${data.relevant_snippets.length}</div></div>
@@ -643,10 +766,9 @@ function renderResults(data) {
     <p>${escapeHtml(data.issue_summary || data.raw_analysis?.slice(0, 800) || '暂无分析摘要')}</p>
   `;
 
-  // Snippets
   const snippetsHtml = data.relevant_snippets.length
     ? data.relevant_snippets.map((s, i) => `
-      <div class="snippet" style="animation: fadeInUp 0.3s ease-out both; animation-delay: ${i * 0.04}s">
+      <div class="snippet" style="animation: fadeInUp 0.3s ease-out both; animation-delay: ${i * 0.03}s">
         <div class="snippet-header">
           <span class="snippet-title">
             ${escapeHtml(s.name)}
@@ -655,18 +777,17 @@ function renderResults(data) {
           <span class="snippet-meta">${escapeHtml(s.file_path)} :${s.line_start}-${s.line_end}</span>
         </div>
         <div class="snippet-body">
-          <button class="copy-btn">Copy</button>
+          <button class="copy-btn">COPY</button>
           <pre>${escapeHtml(s.code?.slice(0, 2000) || '')}</pre>
         </div>
       </div>
     `).join('')
-    : '<div class="empty-state"><div class="icon">//</div>未找到相关代码片段</div>';
+    : '<div class="empty-state"><div class="icon">// no results</div>未找到相关代码片段</div>';
   document.getElementById('snippets').innerHTML = snippetsHtml;
 
-  // Fix suggestions
   const fixesHtml = data.fix_suggestions.length
     ? data.fix_suggestions.map((f, i) => `
-      <div class="fix-card" style="animation: fadeInUp 0.3s ease-out both; animation-delay: ${i * 0.06}s">
+      <div class="fix-card" style="animation: fadeInUp 0.3s ease-out both; animation-delay: ${i * 0.05}s">
         <div class="fix-header">
           <span class="fix-file">${escapeHtml(f.file_path)} / ${escapeHtml(f.name)}</span>
           <span class="fix-confidence conf-${f.confidence}">${f.confidence.toUpperCase()}</span>
@@ -675,7 +796,7 @@ function renderResults(data) {
         <div class="fix-issue">${escapeHtml(f.issue_summary)}</div>
       </div>
     `).join('')
-    : '<div class="empty-state"><div class="icon">[]</div>未生成修复建议</div>';
+    : '<div class="empty-state"><div class="icon">// no fixes</div>未生成修复建议</div>';
   document.getElementById('fixes').innerHTML = fixesHtml;
 
   document.getElementById('results').classList.add('show');
