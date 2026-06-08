@@ -4,6 +4,8 @@ import AppHeader from './components/AppHeader.vue'
 import AppFooter from './components/AppFooter.vue'
 import TabSwitch from './components/TabSwitch.vue'
 import IssueForm from './components/IssueForm.vue'
+import AgentLog from './components/AgentLog.vue'
+import ErrorBox from './components/ErrorBox.vue'
 
 const { mode } = useAnalyzer()
 </script>
@@ -13,7 +15,9 @@ const { mode } = useAnalyzer()
   <div class="container">
     <TabSwitch v-model:mode="mode" />
     <IssueForm />
-    <!-- 后续 Task：AgentLog, ErrorBox, ResultsPanel -->
+    <AgentLog />
+    <ErrorBox />
+    <!-- 后续 Task：ResultsPanel -->
   </div>
   <AppFooter />
 </template>
